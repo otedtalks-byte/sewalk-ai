@@ -1,10 +1,8 @@
 export default async (request) => {
-  // Only allow POST requests
   if (request.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
   }
 
-  // Allow requests from your site only
   const origin = request.headers.get('origin') || '';
   const allowed = [
     'https://sewalk-ai.netlify.app',
@@ -17,27 +15,41 @@ export default async (request) => {
 
   try {
     const body = await request.json();
+    const apiKey = Deno.env.get('GEMINI_API_KEY');
 
-    // Forward request to Anthropic — API key is secret here, never exposed
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': Deno.env.get('ANTHROPIC_API_KEY'),
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
-        system: body.system,
-        messages: body.messages
-      })
-    });
+    // Build conversation history for Gemini
+    const contents = body.messages.map(msg => ({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: msg.content }]
+    }));
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: body.system }] },
+          contents: contents,
+          generationConfig: {
+            maxOutputTokens: 1024,
+            temperature: 0.7
+          }
+        })
+      }
+    );
 
     const data = await response.json();
 
-    return new Response(JSON.stringify(data), {
-      status: response.status,
+    // Convert Gemini response format to match what our app expects
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || 'Sorry, I could not generate a response.';
+
+    const formattedResponse = {
+      content: [{ type: 'text', text: text }]
+    };
+
+    return new Response(JSON.stringify(formattedResponse), {
+      status: 200,
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': origin,
