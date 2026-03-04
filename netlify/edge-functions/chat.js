@@ -17,13 +17,12 @@ export default async (request) => {
     const body = await request.json();
     const apiKey = Deno.env.get('GEMINI_API_KEY');
 
-    // Build conversation history for Gemini
     const contents = body.messages.map(msg => ({
       role: msg.role === 'assistant' ? 'model' : 'user',
       parts: [{ text: msg.content }]
     }));
 
-    const response = await fetch(
+    const geminiResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
       {
         method: 'POST',
@@ -39,16 +38,16 @@ export default async (request) => {
       }
     );
 
-    const data = await response.json();
+    const data = await geminiResponse.json();
 
-    // Convert Gemini response format to match what our app expects
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || 'Sorry, I could not generate a response.';
+    // Return full Gemini response for debugging
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text 
+      || data?.error?.message 
+      || JSON.stringify(data);
 
-    const formattedResponse = {
+    return new Response(JSON.stringify({
       content: [{ type: 'text', text: text }]
-    };
-
-    return new Response(JSON.stringify(formattedResponse), {
+    }), {
       status: 200,
       headers: {
         'Content-Type': 'application/json',
@@ -59,8 +58,10 @@ export default async (request) => {
     });
 
   } catch (err) {
-    return new Response(JSON.stringify({ error: { message: err.message } }), {
-      status: 500,
+    return new Response(JSON.stringify({
+      content: [{ type: 'text', text: 'Error: ' + err.message }]
+    }), {
+      status: 200,
       headers: { 'Content-Type': 'application/json' }
     });
   }
